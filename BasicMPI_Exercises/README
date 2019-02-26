@@ -1,0 +1,10 @@
+Answers to q1-q6 can be compiled with make.
+
+Also included:
+
+Makefile - itself.
+
+NumpyCheck.py - please run with Python3.
+
+WriteBigVector.c - writes large vector of variable size for testing.
+
