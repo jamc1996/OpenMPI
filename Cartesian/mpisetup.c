@@ -11,9 +11,9 @@ int init_cart_3d(int *argc, char *argv[], int *myid, int *nprocs, MPI_Comm *cart
 
 	int periods[3] = {1,1,1};
 	int reorder = 0;
-	proc_dims[0] = 2;
+	proc_dims[0] = 3;
 	proc_dims[1] = 3;
-	proc_dims[2] = 2;	
+	proc_dims[2] = 3;	
 
 
 	for	(i = 0; i<ndims; i++)
@@ -29,52 +29,6 @@ int init_cart_3d(int *argc, char *argv[], int *myid, int *nprocs, MPI_Comm *cart
 }
 
 
-int find_blocksz(int nx, int ny, int nz, int proc_dims[], int myid, int block_dims[])
-{
-	int z_partsize = nz/proc_dims[2];
-  int z_extras = nz%proc_dims[2];
-	int z_det = myid%(proc_dims[1]*proc_dims[0]);
-	
-  if (z_det < z_extras)
-  {
-    block_dims[2] = z_partsize+1;
-  }
-  else
-  {
-    block_dims[2] = z_partsize;
-  }
-
-	// We use the same process in the y direction and reuse partsize/extras variables
-	int y_partsize = ny/proc_dims[1];
-	int y_extras = ny%proc_dims[1];
-	int y_det = (myid/proc_dims[2])%proc_dims[1];
-
-	if (y_det<y_extras)
-  {
-    block_dims[1] = y_partsize + 1;
-  } 
-	else
-  {
-		block_dims[1] = y_partsize;
-  }
-
-	int x_partsize = nx/proc_dims[0];
-	int x_extras = nx%proc_dims[0];
-	int x_det = myid/(proc_dims[1]*proc_dims[2]);
-
-	if (x_det<x_extras)
-  {
-
-    block_dims[0] = x_partsize+1; 
-  } 
-	else
-  {
-		block_dims[0] = x_partsize;
-  }
-
-
-	return 0;
-}
 
 /*
 int decomp3d(int nx, int ny, int nz, int xprocs, int yprocs, int zprocs, int myid, int *sx, int *sy, int *sz, int *ex, int *ey, int *ez)

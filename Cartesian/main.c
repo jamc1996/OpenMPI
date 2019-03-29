@@ -2,19 +2,29 @@
 #include <stdlib.h>
 
 #include <mpi.h>
+#include "shift.h"
 #include "array3.h" 
 #include "mpisetup.h"
 
-void shift(int dir, int pm, MPI_Comm grid, Array3 phi);
+/*		main.c -- program to initialize and manipulate a cartesian grid.
+ *
+ *		Author: John Cormican
+ *
+ *		Purpouse:		To practice moving data around a Cartesian grid.
+ *
+ *		Usage: Compile with mpisetup.c and array3.c and run with mpiexec.
+ */
+
+
 
 int main(int argc, char *argv[])
 {
-	int nx = 1000;
-	int ny = 1000;
-	int nz = 1000;
+	int nx = 10;
+	int ny = 10;
+	int nz = 10;
 
 	int proc_dims[3];
-	int block_dims[3];
+
 
 	int myid;
   int nprocs;
@@ -22,69 +32,53 @@ int main(int argc, char *argv[])
 
 	MPI_Comm cartcomm;
 
-	int nbr_x1, nbr_x0, nbr_y1, nbr_y0, nbr_z1, nbr_z0;
-	
 
 	init_cart_3d(&argc, argv, &myid, &nprocs, &cartcomm, nx, ny, nz, proc_dims);
 
-	find_blocksz(nx, ny, nz, proc_dims, myid, block_dims);
 
-	MPI_Cart_shift(cartcomm, 0, 1, &nbr_x1, &nbr_x0);
-	MPI_Cart_shift(cartcomm, 1, 1, &nbr_y1, &nbr_y0);	
-	MPI_Cart_shift(cartcomm, 2, 1, &nbr_z1, &nbr_z0);
+	Array3 phi = alloc_array3(nx, ny, nz, proc_dims, myid);
+
+	fill_array3(&phi, myid);
+
+	if (myid == 0)
+	{
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,0,0,0,phi.data3d[0][0][0]);
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,1,0,0,phi.data3d[1][0][0]);
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,2,0,0,phi.data3d[2][0][0]);
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,3,0,0,phi.data3d[3][0][0]);
+	}
+	if (myid == 18)
+	{
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,1,0,0,phi.data3d[1][0][0]);
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,2,0,0,phi.data3d[2][0][0]);
+	}
+	shift(0, 2, cartcomm, &phi);
 
 
 
-	//int me, myself;
 
-//	MPI_Cart_shift(cartcomm, 0, 0, &me, &myself);
+	int me, myself;
+
+	MPI_Cart_shift(cartcomm, 0, 1, &me, &myself);
 
 	//printf("I am %d beautiful %d\n",me, myself);
 	//printf("I am processor %d with neighbours up %d and down %d ---> neighbours left and right %d and %d ----> and neighbours forward and backward %d and %d\n",myid,nbr_x1,nbr_x0,nbr_y1, nbr_y0, nbr_z1, nbr_z0);
+//printf("I am processor %d and my chunk is %d x %d x %d\n",myid,phi.local_dim[0],phi.local_dim[1], phi.local_dim[2]);
+	if (myid == 0)
+	{
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,0,0,0,phi.data3d[0][0][0]);
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,1,0,0,phi.data3d[1][0][0]);
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,2,0,0,phi.data3d[2][0][0]);
+		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,3,0,0,phi.data3d[3][0][0]);
+	}
 
-	printf("I am processor %d and my chunk is %d x %d x %d\n",myid,block_dims[0],block_dims[1], block_dims[2]);
 
+
+	free_array3(&phi);
 	MPI_Finalize();
 
 	return 0;
 }
-
-
-void shift(int dir, int pm, MPI_Comm grid, Array3* phi, int nx, int ny, int nz)
-{
-	MPI_Datatype surface;
-	if (dir == 0)
-	{
-		pm = pm%nx;
-		MPI_Type_vector(phi->dim1, phi->dim2, 0, MPI_DOUBLE, &surface);
-	}
-	else if(dir == 1)
-	{
-		pm = pm%ny;
-		MPI_Type_vector(phi->dim0, phi->dim2, phi->dim2*phi->dim1, MPI_DOUBLE, &surface);
-	}
-	else if (dir == 2)
-	{
-		pm = pm%nz;
-		MPI_Type_vector(phi->dim0*phi->dim1, 1, phi->dim2, MPI_DOUBLE, &surface);
-	}
-	else
-	{
-		printf("shift.c: invalid direction for 3d array.\n");
-		return;
-	}
-	MPI_Type_commit(&surface);
-	
-	
-	
-	
-}
-
-
-
-
-
-
 
 
 
