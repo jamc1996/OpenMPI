@@ -18,10 +18,23 @@ void shift(int dir, int pm, MPI_Comm grid, Array3* phi)
 		printf("shift.c: invalid direction for 3d array.\n");
 		return;
 	}
-	while(pm>phi->global_dim[dir])
+
+	if (pm > 0)
 	{
-		pm-=phi->global_dim[dir];
+	  while(pm>phi->global_dim[dir])
+	  {
+	  	  pm-=phi->global_dim[dir];
+	  }
 	}
+	else
+	{
+	  while(pm<-phi->global_dim[dir])
+	  {
+	  	  pm+=phi->global_dim[dir];
+	  }
+	
+	}
+
 	if (pm==0)
 	{
 		return;
