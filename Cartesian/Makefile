@@ -3,7 +3,7 @@ MPCC = mpicc
 CC = gcc
 CFLAGS = -Wall
 
-objects = array3.o main.o mpisetup.o shift.o
+objects = allocarray.o main.o mpisetup.o shift.o
 
 all: arraymaker
 
@@ -11,19 +11,19 @@ arraymaker: $(objects)
 	module load cports openmpi;\
 	$(MPCC) $(CFLAGS) -o arraymaker $(objects) -lm
 
-main.o: main.c
+main.o: main.c array3.h
 	module load cports openmpi;\
 	$(MPCC) $(CFLAGS) -c $<
 
-array3.o: array3.c array3.h
+allocarray.o: allocarray.c allocarray.h array3.h
 	module load cports openmpi;\
 	$(MPCC) $(CFLAGS) -c $<
 
-mpisetup.o: mpisetup.c mpisetup.h
+mpisetup.o: mpisetup.c mpisetup.h array3.h
 	module load cports openmpi;\
 	$(MPCC) $(CFLAGS) -c $<
 
-shift.o: shift.c shift.h
+shift.o: shift.c shift.h array3.h
 	module load cports openmpi;\
 	$(MPCC) $(CFLAGS) -c $<
 

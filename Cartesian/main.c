@@ -4,6 +4,7 @@
 #include <mpi.h>
 #include "shift.h"
 #include "array3.h" 
+#include "allocarray.h"
 #include "mpisetup.h"
 
 /*		main.c -- program to initialize and manipulate a cartesian grid.
@@ -15,68 +16,59 @@
  *		Usage: Compile with mpisetup.c and array3.c and run with mpiexec.
  */
 
-
-
 int main(int argc, char *argv[])
+/* Function used to test out my shift functions around the matrix. */
 {
-	int nx = 10;
-	int ny = 10;
-	int nz = 10;
+	//Arbitrary matrix dimensions
+	int nx = 100;
+	int ny = 100;
+	int nz = 100;
 
 	int proc_dims[3];
-
-
 	int myid;
   int nprocs;
-
-
 	MPI_Comm cartcomm;
 
 
+	// Cartesian topology intialized
 	init_cart_3d(&argc, argv, &myid, &nprocs, &cartcomm, nx, ny, nz, proc_dims);
-
-
-	Array3 phi = alloc_array3(nx, ny, nz, proc_dims, myid);
-
+	
+	// 3d array created on each processor and filled with random values
+	Array3 phi;
+	alloc_array3(&phi, nx, ny, nz, proc_dims, myid);
 	fill_array3(&phi, myid);
-
+	
+	// Testing of shift function:	
 	if (myid == 0)
 	{
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,0,0,0,phi.data3d[0][0][0]);
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,1,0,0,phi.data3d[1][0][0]);
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,2,0,0,phi.data3d[2][0][0]);
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,3,0,0,phi.data3d[3][0][0]);
+		int loc = phi.local_dim[2]-1;
+		printf("\nTesting done tracking one value move around the grid and between processors.\n");
+		printf("\n\n(myid is %d) and phi[0][0][%d] is %lf\n",myid,loc,phi.data3d[0][0][loc]);
+		printf("The grid will now be shifted once in the x_2 direction.\n\n\n");
 	}
-	if (myid == 18)
+	shift(2, 1, cartcomm, &phi);
+	int val;
+	if (myid == 1)
 	{
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,1,0,0,phi.data3d[1][0][0]);
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,2,0,0,phi.data3d[2][0][0]);
+		val = phi.local_dim[1];
+		printf("(myid is %d) and phi[0][0][0] is %lf\n",myid,phi.data3d[0][0][0]);
+		printf("We now shift the grid by %d in the x_1 direction.\n\n\n",phi.local_dim[1]);
 	}
-	shift(0, 2, cartcomm, &phi);
-
-
-
-
-	int me, myself;
-
-	MPI_Cart_shift(cartcomm, 0, 1, &me, &myself);
-
-	//printf("I am %d beautiful %d\n",me, myself);
-	//printf("I am processor %d with neighbours up %d and down %d ---> neighbours left and right %d and %d ----> and neighbours forward and backward %d and %d\n",myid,nbr_x1,nbr_x0,nbr_y1, nbr_y0, nbr_z1, nbr_z0);
-//printf("I am processor %d and my chunk is %d x %d x %d\n",myid,phi.local_dim[0],phi.local_dim[1], phi.local_dim[2]);
-	if (myid == 0)
+	MPI_Bcast(&val, 1, MPI_INT, 1, cartcomm);
+	shift(1, val, cartcomm, &phi);
+	if (myid == 1+proc_dims[2])
 	{
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,0,0,0,phi.data3d[0][0][0]);
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,1,0,0,phi.data3d[1][0][0]);
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,2,0,0,phi.data3d[2][0][0]);
-		printf("myid is %d and the phi[%d][%d][%d] is %lf\n",myid,3,0,0,phi.data3d[3][0][0]);
+		printf("(myid is %d) and phi[0][0][0] is %lf\n",myid,phi.data3d[0][0][0]);
+		printf("We now shift the grid by -1 in the x_0 direction.\n\n\n");
 	}
-
-
+	shift(0, -1, cartcomm, &phi);
+	if (myid == (nprocs+(1+proc_dims[2])-proc_dims[2]*proc_dims[1])%nprocs)
+	{
+		printf("(myid is %d) and phi[0][%d][0] is %lf\n\n\n",myid,phi.local_dim[0]-1,phi.data3d[phi.local_dim[0]-1][0][0]);
+	}
 
 	free_array3(&phi);
 	MPI_Finalize();
-
 	return 0;
 }
 
