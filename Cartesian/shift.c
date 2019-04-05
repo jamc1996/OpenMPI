@@ -18,7 +18,6 @@ void shift(int dir, int pm, MPI_Comm grid, Array3* phi)
 		printf("shift.c: invalid direction for 3d array.\n");
 		return;
 	}
-
 	if (pm > 0)
 	{
 	  while(pm>phi->global_dim[dir])
@@ -32,22 +31,29 @@ void shift(int dir, int pm, MPI_Comm grid, Array3* phi)
 	  {
 	  	  pm+=phi->global_dim[dir];
 	  }
-	
 	}
-
 	if (pm==0)
 	{
 		return;
 	}
 	
+	// Coordinates within cartesian topology calculated
 	int coord[3];
 	MPI_Cart_coords(grid, phi->myid, 3, coord);
 
-	// An info struct created to easily pass
+	// An info struct created to easily pass data between functions
 	ShiftInfo info;	
 	info.dir = dir;
 	info.pm = pm;
-	
+
+	if( abs(dir)%phi->part_size[dir] > phi->part_size[dir]/2 || abs(dir)%phi->part_size[dir] == 0 )
+	{
+		info.switch_flag = 1;
+	}
+	else
+	{
+		info.switch_flag = 0;
+	}
 	//MPI DataType used for moving non-contiguous data:
 	MPI_Datatype surface;	
 	create_surface_type(&info, phi, &surface);
@@ -57,20 +63,38 @@ void shift(int dir, int pm, MPI_Comm grid, Array3* phi)
 	search_back_direction(&info, phi, coord[dir]);
 	search_forward_direction(&info, phi, coord[dir]);
 	get_send_sizes(&info, phi, coord[dir]);
+	
+	if(phi->myid == 14 || phi->myid == 11 || phi->myid == 17)
+	{
+		//printf("%d send sizes are %d and %d send dists are %d %d\n",phi->myid,info.send_size1,info.send_size2,info.send_dist+1,info.send_dist);
+		//printf("%d rec sizes are %d and %d and dists %d and %d\n",phi->myid,info.rcv_size1,info.rcv_size2,info.rcv_dist,info.rcv_dist+1);
+	}
 
-	double* temp = malloc(info.rcv_size1*info.surf_size*sizeof(double));
-
+	double* temp;
+	if(info.switch_flag == 0)
+	{
+		temp = malloc(info.rcv_size1*info.surf_size*sizeof(double));
+	}
+	else
+	{
+		temp = malloc(info.rcv_size2*info.surf_size*sizeof(double));
+	}
+	
 	// First entries must be sent to temporary buffer
 	move_to_temp(phi, temp, surface, grid, &info);
 
 	// Remainder can be moved directly
 	move_directly(phi, surface, grid, &info);
-
 	// Finally data read back from temp into Array3 struct
 	move_from_temp(phi, temp, surface, grid, &info);
-
-
-	free(temp);
+	if(info.switch_flag == 0 && info.rcv_size1>0)
+	{
+		free(temp);
+	}
+	else if(info.switch_flag == 1 && info.rcv_size1>0)
+	{
+		free(temp);
+	}
 }
 
 void create_surface_type(ShiftInfo *info, Array3 *phi, MPI_Datatype* surface)
@@ -202,6 +226,14 @@ void get_send_sizes(ShiftInfo *info, Array3 *phi, int coord)
 	info->send_size2 = info->send_split;
 	info->rcv_size1 = info->rcv_split;
 	info->rcv_size2 = phi->local_dim[info->dir] - info->rcv_split;
+
+	if(phi->myid == 14 || phi->myid == 11 || phi->myid == 17)
+	{
+		//printf("%d send sizes are %d and %d send dists are %d %d\n",phi->myid,info->send_size1,info->send_size2,info->send_dist+1,info->send_dist);
+	//	printf("%d rec sizes are %d and %d and dists %d and %d\n",phi->myid,info->rcv_size1,info->rcv_size2,info->rcv_dist,info->rcv_dist+1);
+	}
+
+
 	if(info->rcv_size2 == -1)
 	{
 		info->rcv_size1=0;
@@ -213,6 +245,22 @@ void get_send_sizes(ShiftInfo *info, Array3 *phi, int coord)
 		else 
 		{
 			info->rcv_dist++;
+		}
+	}
+	if(info->rcv_size2 > phi->part_size[info->dir])
+	{
+		if((coord + info->rcv_dist+1)%phi->proc_dims[info->dir] >= phi->procs_extra[info->dir])
+		{
+			info->rcv_size1 = phi->part_size[info->dir];
+			info->rcv_size2 = 1;
+			if (info->pm > 0)
+			{
+				info->rcv_dist--;
+			}
+			else
+			{
+				info->rcv_dist++;
+			}
 		}
 	}
 	if(info->send_size1 > phi->part_size[info->dir])
@@ -230,107 +278,221 @@ void get_send_sizes(ShiftInfo *info, Array3 *phi, int coord)
 				info->send_dist--;
 			}
 		}	
+	}
+	if(info->send_size1 == -1)
+	{
+		info->send_size2 = 0;
+		info->send_size1 = phi->part_size[info->dir];
+		if (info->pm > 0)
+		{
+			info->send_dist++;
+		}
+		else
+		{
+			info->send_dist--;
+		}
 	}	
 }
 
 void move_to_temp(Array3 *phi, double *temp, MPI_Datatype surface, MPI_Comm grid, ShiftInfo *info)
 /* Function for moving the first block of data to a temporary array on the receiving processor. */
 {
-	// Receiving/Sending processors calculated
-	int proc_rcvr, proc_sendr, tmp_proc;
-	MPI_Cart_shift(grid, info->dir, info->rcv_dist, &tmp_proc, &proc_sendr);
-	MPI_Cart_shift(grid, info->dir, info->send_dist+1, &tmp_proc, &proc_rcvr);
+	if (info->switch_flag == 0)
+	{
+		// Receiving/Sending processors calculated
+		int proc_rcvr, proc_sendr, tmp_proc;
+		MPI_Cart_shift(grid, info->dir, info->rcv_dist, &tmp_proc, &proc_sendr);
+		MPI_Cart_shift(grid, info->dir, info->send_dist+1, &tmp_proc, &proc_rcvr);
+
+		// Sendrecv used as much as possible but may be different number of sends to receives.
+		int i;
+		int count = info->send_size1;
+		int diff = info->send_size1 - info->rcv_size1;
+		double* pointer;
+		if (diff>0)
+		{
+			count = info->rcv_size1;
+		}
 	
-	// Sendrecv used as much as possible but may be different number of sends to receives.
-	int i;
-	int count = info->send_size1;
-	int diff = info->send_size1 - info->rcv_size1;
-	double* pointer;
-	if (diff>0)
-	{
-		count = info->rcv_size1;
-	}
-
-	MPI_Barrier(grid);	
-	for (i=0; i<count; i++)
-	{
-		pointer = find_start_dimension( info->dir, info->send_split+i, phi);
-		MPI_Sendrecv( pointer, 1 , surface, proc_rcvr, 0, &temp[i*info->surf_size], info->surf_size, MPI_DOUBLE, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
-	}	
-	if (diff>0)
-	{
-		for (i=0;i<(diff);i++)
+		MPI_Barrier(grid);	
+		for (i=0; i<count; i++)
 		{
-			pointer = find_start_dimension( info->dir, info->send_split+info->rcv_size1+i, phi);
-			MPI_Send(pointer, 1, surface, proc_rcvr, 0, grid);
+			pointer = find_start_dimension( info->dir, info->send_split+i, phi);
+			MPI_Sendrecv( pointer, 1 , surface, proc_rcvr, 0, &temp[i*info->surf_size], info->surf_size, MPI_DOUBLE, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+		}	
+		if (diff>0)
+		{
+			for (i=0;i<(diff);i++)
+			{	
+				pointer = find_start_dimension( info->dir, info->send_split+info->rcv_size1+i, phi);
+				MPI_Send(pointer, 1, surface, proc_rcvr, 0, grid);
+			}
+		}	
+		else if (diff<0)
+		{
+			for ( i=0; i<(-diff); i++)
+			{
+				MPI_Recv(&temp[(count+i)*info->surf_size], info->surf_size, MPI_DOUBLE, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+			}
 		}
 	}
-	else if (diff<0)
+	else
 	{
-		for ( i=0; i<(-diff); i++)
+		// Receiving/Sending processors calculated
+		int proc_rcvr, proc_sendr, tmp_proc;
+		MPI_Cart_shift(grid, info->dir, info->rcv_dist+1, &tmp_proc, &proc_sendr);
+		MPI_Cart_shift(grid, info->dir, info->send_dist, &tmp_proc, &proc_rcvr);
+
+		// Sendrecv used as much as possible but may be different number of sends to receives.
+		int i;
+		int count = info->send_size2;
+		int diff = info->send_size2 - info->rcv_size2;
+		double* pointer;
+		if (diff>0)
 		{
-			MPI_Recv(&temp[(count+i)*info->surf_size], info->surf_size, MPI_DOUBLE, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+			count = info->rcv_size2;
+		}
+
+		MPI_Barrier(grid);	
+		for (i=0; i<count; i++)
+		{
+			pointer = find_start_dimension( info->dir, i, phi);
+			MPI_Sendrecv( pointer, 1 , surface, proc_rcvr, 0, &temp[i*info->surf_size], info->surf_size, MPI_DOUBLE, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+		}		
+		if (diff>0)
+		{
+			for (i=0;i<(diff);i++)
+			{
+				pointer = find_start_dimension( info->dir, count+i, phi);
+				MPI_Send(pointer, 1, surface, proc_rcvr, 0, grid);
+			}
+		}
+		else if (diff<0)
+		{
+			for ( i=0; i<(-diff); i++)
+			{
+				MPI_Recv(&temp[(count+i)*info->surf_size], info->surf_size, MPI_DOUBLE, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+			}
 		}
 	}
-
 }
 
 void move_from_temp(Array3* phi, double* temp, MPI_Datatype surface, MPI_Comm grid, ShiftInfo *info)
 /* Function to move from temp into Array3 struct */
 {
-	int i;
-	double *pointer;
-	// I used MPI_SendRecv even though it was to itself as it was the nicest code and didn't seem to cause slow down.
-	for (i=0; i<info->rcv_size1; i++)
+	if(info->switch_flag==0)
 	{
-		pointer = find_start_dimension( info->dir, i, phi);
-		MPI_Sendrecv(&temp[i*info->surf_size], info->surf_size, MPI_DOUBLE, phi->myid, 0, pointer, 1, surface, phi->myid, 0, grid, MPI_STATUS_IGNORE);
+		int i;
+		double *pointer;
+		// I used MPI_SendRecv even though it was to itself as it was the nicest code and didn't seem to cause slow down.
+		for (i=0; i<info->rcv_size1; i++)
+		{
+			pointer = find_start_dimension( info->dir, i, phi);
+			MPI_Sendrecv(&temp[i*info->surf_size], info->surf_size, MPI_DOUBLE, phi->myid, 0, pointer, 1, surface, phi->myid, 0, grid, MPI_STATUS_IGNORE);
+		}
+	}
+	else
+	{
+		int i;
+		double *pointer;
+		// I used MPI_SendRecv even though it was to itself as it was the nicest code and didn't seem to cause slow down.
+		if(info->rcv_split >= phi->local_dim[info->dir])
+		{
+			info->rcv_split =0;
+		}
+		for (i=0; i<info->rcv_size2; i++)
+		{
+			pointer = find_start_dimension( info->dir, info->rcv_split+i, phi);
+			MPI_Sendrecv(&temp[i*info->surf_size], info->surf_size, MPI_DOUBLE, phi->myid, 0, pointer, 1, surface, phi->myid, 0, grid, MPI_STATUS_IGNORE);
+		}
 	}
 }
 
 void move_directly(Array3* phi, MPI_Datatype surface, MPI_Comm grid, ShiftInfo *info)
 /* Function to move data from one phi position to another. */
 {
-	int i;
+	if(info->switch_flag==0)
+	{
+		int i;
 	
-	// Work out what processors we're sending/receiving from
-	int proc_rcvr, proc_sendr, tmp_proc;
-	MPI_Cart_shift(grid, info->dir, info->rcv_dist+1, &tmp_proc, &proc_sendr);
-	MPI_Cart_shift(grid, info->dir, info->send_dist, &tmp_proc, &proc_rcvr);
+		// Work out what processors we're sending/receiving from
+		int proc_rcvr, proc_sendr, tmp_proc;
+		MPI_Cart_shift(grid, info->dir, info->rcv_dist+1, &tmp_proc, &proc_sendr);
+		MPI_Cart_shift(grid, info->dir, info->send_dist, &tmp_proc, &proc_rcvr);
 
-	// Try to use sendrecv calls as much as possible but if difference between #sends and #receives
-	// we to just send or just recv.
-	int count = info->send_size2;
-	int diff = info->send_size2 - info->rcv_size2;
-	double *pointer1, *pointer2;	
-	if (diff>0)
-	{
-		count = info->rcv_size2;
-	}
-
-	for (i=1; i<count+1; i++)
-	{
-		pointer1 = find_start_dimension( info->dir, info->send_size2 - i, phi);
-		pointer2 = find_start_dimension( info->dir, phi->local_dim[info->dir]-i, phi);
-		MPI_Sendrecv(pointer1, 1, surface, proc_rcvr, 0, pointer2, 1, surface, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
-	}
-	if (diff>0)
-	{
-		for (i=1;i<(diff+1);i++)
+		// Try to use sendrecv calls as much as possible but if difference between #sends and #receives
+		// we to just send or just recv.
+		int count = info->send_size2;
+		int diff = info->send_size2 - info->rcv_size2;
+		double *pointer1, *pointer2;	
+		if (diff>0)
 		{
-			pointer1 = find_start_dimension( info->dir, info->send_size2-info->rcv_size2-i, phi);
-			MPI_Send(pointer1, 1, surface, proc_rcvr, 0, grid);
+			count = info->rcv_size2;
+		}
+
+		for (i=1; i<count+1; i++)
+		{
+			pointer1 = find_start_dimension( info->dir, info->send_size2 - i, phi);
+			pointer2 = find_start_dimension( info->dir, phi->local_dim[info->dir]-i, phi);
+			MPI_Sendrecv(pointer1, 1, surface, proc_rcvr, 0, pointer2, 1, surface, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+		}
+		if (diff>0)
+		{
+			for (i=1;i<(diff+1);i++)
+			{
+				pointer1 = find_start_dimension( info->dir, info->send_size2-info->rcv_size2-i, phi);
+				MPI_Send(pointer1, 1, surface, proc_rcvr, 0, grid);
+			}
+		}
+		else if (diff<0)
+		{
+			for ( i=1; i<1-diff; i++)
+			{
+				pointer2 = find_start_dimension( info->dir, phi->local_dim[info->dir]-count- i, phi);
+				MPI_Recv(pointer2,1, surface, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+			}
 		}
 	}
-	else if (diff<0)
+	else
 	{
-		for ( i=1; i<1-diff; i++)
+		int i;
+	
+		// Work out what processors we're sending/receiving from
+		int proc_rcvr, proc_sendr, tmp_proc;
+		MPI_Cart_shift(grid, info->dir, info->rcv_dist, &tmp_proc, &proc_sendr);
+		MPI_Cart_shift(grid, info->dir, info->send_dist+1, &tmp_proc, &proc_rcvr);
+
+		// Try to use sendrecv calls as much as possible but if difference between #sends and #receives
+		// we to just send or just recv.
+		int count = info->send_size1;
+		int diff = info->send_size1 - info->rcv_size1;
+		double *pointer1, *pointer2;	
+		if (diff>0)
 		{
-			pointer2 = find_start_dimension( info->dir, phi->local_dim[info->dir]-count- i, phi);
-			MPI_Recv(pointer2,1, surface, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+			count = info->rcv_size1;
+		}
+
+		for (i=0; i<count; i++)
+		{
+			pointer1 = find_start_dimension( info->dir, info->send_split + i, phi);
+			pointer2 = find_start_dimension( info->dir, i, phi);
+			MPI_Sendrecv(pointer1, 1, surface, proc_rcvr, 0, pointer2, 1, surface, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+		}
+		if (diff>0)
+		{
+			for (i=0;i<diff;i++)
+			{
+				pointer1 = find_start_dimension( info->dir, info->send_split+count+i, phi);
+				MPI_Send(pointer1, 1, surface, proc_rcvr, 0, grid);
+			}
+		}
+		else if (diff<0)
+		{
+			for ( i=1; i<1-diff; i++)
+			{
+				pointer2 = find_start_dimension( info->dir, count + i, phi);
+				MPI_Recv(pointer2,1, surface, proc_sendr, 0, grid, MPI_STATUS_IGNORE);
+			}
 		}
 	}
 }
-
-
-

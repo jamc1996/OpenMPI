@@ -21,7 +21,7 @@ int main(int argc, char *argv[])
 {
 	//Arbitrary matrix dimensions
 	int nx = 100;
-	int ny = 100;
+	int ny = 10;
 	int nz = 100;
 
 	int proc_dims[3];
@@ -42,11 +42,12 @@ int main(int argc, char *argv[])
 	if (myid == 0)
 	{
 		int loc = phi.local_dim[2]-1;
-		printf("\nTesting done tracking one value move around the grid and between processors.\n");
+		printf("\nSome testing done tracking one value move around the grid and between processors.\n");
 		printf("\n\n(myid is %d) and phi[0][0][%d] is %lf\n",myid,loc,phi.data3d[0][0][loc]);
 		printf("The grid will now be shifted once in the x_2 direction.\n\n\n");
 	}
 	shift(2, 1, cartcomm, &phi);
+
 	int val;
 	if (myid == 1)
 	{
@@ -64,7 +65,27 @@ int main(int argc, char *argv[])
 	shift(0, -1, cartcomm, &phi);
 	if (myid == (nprocs+(1+proc_dims[2])-proc_dims[2]*proc_dims[1])%nprocs)
 	{
-		printf("(myid is %d) and phi[0][%d][0] is %lf\n\n\n",myid,phi.local_dim[0]-1,phi.data3d[phi.local_dim[0]-1][0][0]);
+		printf("(myid is %d) and phi[%d][0][0] is %lf\n\n\n",myid,phi.local_dim[0]-1,phi.data3d[phi.local_dim[0]-1][0][0]);
+	}
+
+	MPI_Barrier(MPI_COMM_WORLD);
+	
+	if (myid == 0)
+	{
+		printf("\n\nCan now check the function runs for every pm value:\n\n");
+	}
+
+	int a;
+	for(a=-ny; a<ny; a++)
+	{
+		MPI_Barrier(MPI_COMM_WORLD);
+		MPI_Barrier(MPI_COMM_WORLD);
+		shift(1,-a,cartcomm,&phi);
+	}
+
+	if (myid == 0)
+	{
+		printf("This message should print without any hanging or seg faults.\n");
 	}
 
 	free_array3(&phi);

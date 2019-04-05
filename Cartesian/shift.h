@@ -25,6 +25,8 @@ typedef struct
 	int send_dist;
 	int rcv_dist;
 
+	int switch_flag;
+
 	int send_size1;
 	int rcv_size1;
 	int first_sendr_size;
